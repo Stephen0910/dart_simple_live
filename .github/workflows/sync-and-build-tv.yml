@@ -1,0 +1,78 @@
+name: Sync Upstream & Build TV APK
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # 每周日 UTC 0:00
+  workflow_dispatch:      # 支持手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.sync.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync upstream
+        id: sync
+        run: |
+          git remote add upstream https://github.com/xiaoyaocz/dart_simple_live.git
+          git fetch upstream
+
+          LOCAL=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/master)
+
+          if [ "$LOCAL" != "$UPSTREAM" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git merge upstream/master --no-edit
+            git push origin master
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-tv:
+    needs: sync
+    if: needs.sync.outputs.has_changes == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: 'stable'
+
+      - name: Build TV APK
+        working-directory: simple_live_tv_app
+        run: |
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: simple-live-tv-apk
+          path: simple_live_tv_app/build/app/outputs/flutter-apk/*.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: auto-build-${{ github.run_number }}
+          name: Auto Build #${{ github.run_number }}
+          files: simple_live_tv_app/build/app/outputs/flutter-apk/*.apk
+          draft: false
+          prerelease: true
