@@ -69,7 +69,7 @@ jobs:
         working-directory: simple_live_tv_app
         run: |
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release --target-platform android-arm
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
